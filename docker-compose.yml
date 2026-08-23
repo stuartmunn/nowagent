@@ -8,14 +8,19 @@ services:
     environment:
       - PORT=8791
       - NOW_SDK_CREDENTIAL_FILE=/run/secrets/now_sdk_credential
+      - ANTHROPIC_API_KEY_FILE=/run/secrets/anthropic_api_key
     secrets:
       - now_sdk_credential
+      - anthropic_api_key
     restart: unless-stopped
 
-# File-based secrets: the real credential file (./secrets/now-sdk-credential)
-# is never committed — only mounted at container runtime to /run/secrets/.
-# See ./now-sdk-credential.example for its expected shape, and CLAUDE.md's
+# File-based secrets: the real credential files (./secrets/now-sdk-credential,
+# ./secrets/anthropic-api-key) are never committed — only mounted at container
+# runtime to /run/secrets/. See ./now-sdk-credential.example and
+# ./anthropic-api-key.example for their expected shape, and CLAUDE.md's
 # secrets rule before touching any of this.
 secrets:
   now_sdk_credential:
     file: ./secrets/now-sdk-credential
+  anthropic_api_key:
+    file: ./secrets/anthropic-api-key

@@ -1,0 +1,6 @@
+{
+    "scope": "x_nowagent",
+    "scopeId": "815e7bb9345049a088679992bf9d2542",
+    "name": "NowAgent Generated Artifacts",
+    "tsconfigPath": "./src/server/tsconfig.json"
+}
