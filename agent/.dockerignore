@@ -1,3 +1,6 @@
 node_modules
+fluent-workspace/node_modules
+fluent-workspace/dist
+fluent-workspace/.now
 npm-debug.log*
 *.md

@@ -1,0 +1,15 @@
+.DS_Store
+.now/
+dist/
+node_modules/
+target/
+*.tsbuildinfo
+.jest_cache
+
+# Runtime-generated artifacts (NOW-10 codegen output) — not committed.
+# They're produced fresh on each generation call; nothing here is a
+# fixture worth version-controlling until it's actually approved+deployed.
+src/fluent/generated/*
+!src/fluent/generated/.gitkeep
+src/server/generated/*
+!src/server/generated/.gitkeep

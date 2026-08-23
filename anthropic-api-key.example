@@ -1,0 +1,9 @@
+PLACEHOLDER ONLY — do not put a real API key in this file.
+
+Create ./secrets/anthropic-api-key (no extension) — that path is
+gitignored and must never be committed, see CLAUDE.md's secrets rule.
+Unlike this file, it must contain ONLY the raw key value and nothing
+else (no comments, no surrounding text) — the agent reads the whole
+file content as the key:
+
+sk-ant-REPLACE_ME
