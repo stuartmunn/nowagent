@@ -15,43 +15,12 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 
 const { generateScriptBody } = require('./claudeClient');
-const { validateFluentWorkspace, FLUENT_WORKSPACE_DIR } = require('./fluentValidate');
-
-const FLUENT_DIR = path.join(FLUENT_WORKSPACE_DIR, 'src', 'fluent', 'generated');
-const SERVER_DIR = path.join(FLUENT_WORKSPACE_DIR, 'src', 'server', 'generated');
+const { validateFluentWorkspace } = require('./fluentValidate');
+const { FLUENT_DIR, SERVER_DIR, withLock, clearGeneratedDir } = require('./fluentWorkspace');
+const { slugify, escapeSingleQuotes, assertSafeIdentifier } = require('./textUtils');
 
 const VALID_WHEN = new Set(['before', 'after', 'async', 'display']);
 const VALID_ACTIONS = new Set(['insert', 'update', 'delete', 'query']);
-const SAFE_IDENTIFIER = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
-
-// now-sdk build type-checks the *entire* Fluent workspace, not just the
-// artifact just written — so this module treats FLUENT_DIR/SERVER_DIR as
-// single-slot scratch space (cleared before every generation) and serializes
-// calls with this lock. Together that means at most one candidate artifact
-// ever exists on disk during a build, which avoids two failure modes PR
-// Agent correctly flagged on this story's first review: a stale invalid
-// file from a previous call permanently failing every later validation,
-// and concurrent calls' files cross-contaminating each other's build.
-let lock = Promise.resolve();
-function withLock(fn) {
-  const result = lock.then(fn, fn);
-  lock = result.catch(() => {});
-  return result;
-}
-
-function clearGeneratedDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.mkdirSync(dir, { recursive: true });
-}
-
-function slugify(text) {
-  const slug = String(text)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
-  return slug || 'business-rule';
-}
 
 function assertValidContext(context) {
   if (!context || typeof context !== 'object') {
@@ -70,14 +39,6 @@ function assertValidContext(context) {
   if (!description || typeof description !== 'string') {
     throw new Error('context.description is required (plain-English desired behaviour)');
   }
-}
-
-function escapeSingleQuotes(str) {
-  return String(str)
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'")
-    .replace(/\r/g, '\\r')
-    .replace(/\n/g, '\\n');
 }
 
 function buildServerSource(functionName, scriptBody) {
@@ -136,11 +97,8 @@ async function generateBusinessRule(context, opts = {}) {
   );
 
   // functionName is untrusted LLM output injected verbatim as a JS
-  // identifier (export name + import specifier) into generated source —
-  // reject anything that isn't a plain identifier before it touches disk.
-  if (!SAFE_IDENTIFIER.test(functionName)) {
-    throw new Error(`Claude returned an unsafe function name: ${JSON.stringify(functionName)}`);
-  }
+  // identifier (export name + import specifier) into generated source.
+  assertSafeIdentifier(functionName, 'function name');
 
   const serverSource = buildServerSource(functionName, scriptBody);
   const fluentSource = buildFluentSource({ id, name, table, when, action, filterCondition, functionName });
@@ -150,8 +108,8 @@ async function generateBusinessRule(context, opts = {}) {
   const validation = await withLock(async () => {
     // Single-slot scratch space: clear any previous candidate before writing
     // this one, so a stale invalid file from an earlier call (or a
-    // concurrent one) can never poison this build. See the lock/clear
-    // comment above FLUENT_DIR's declaration for why.
+    // concurrent one — including a different artifact type sharing this
+    // same workspace) can never poison this build.
     clearGeneratedDir(FLUENT_DIR);
     clearGeneratedDir(SERVER_DIR);
     fs.writeFileSync(fluentFilePath, fluentSource, 'utf8');
@@ -166,18 +124,21 @@ async function generateBusinessRule(context, opts = {}) {
     fluentSource,
     serverSource,
     validation,
-    // Structured summary for NOW-12 (approval statement) — table/condition/
-    // timing + plain-English description of behaviour, not raw code.
+    // Structured summary for NOW-12 (approval statement) — plain-English
+    // trigger + condition + what it does, not raw code. Keep this shape
+    // identical to generateClientScript.js's summary (NOW-11) — same field
+    // names for both artifact types (a single human-readable `trigger`
+    // string, not BR-specific when/action fields) — so downstream stories
+    // don't need artifact-type-specific branching to read it.
     summary: {
       artifactType: 'Business Rule',
       name,
       table,
-      when,
-      action,
+      trigger: `${when} ${action.join(', ')}`,
       filterCondition: filterCondition || null,
       whatItDoes: scriptSummary,
     },
   };
 }
 
-module.exports = { generateBusinessRule, slugify };
+module.exports = { generateBusinessRule };

@@ -2,7 +2,8 @@
 
 /**
  * Wraps the Anthropic Messages API ("Claude SDK") to turn a plain-English
- * description into a ServiceNow Business Rule script body.
+ * description into a ServiceNow script body — Business Rule (server-side,
+ * NOW-10) or Client Script (browser-side, NOW-11).
  *
  * Secrets handling: the API key is supplied via a Docker Compose file-based
  * secret (see docker-compose.yml / CLAUDE.md), read from ANTHROPIC_API_KEY_FILE
@@ -113,4 +114,90 @@ async function generateScriptBody({ description, table, when, action }, opts = {
   return toolUse.input;
 }
 
-module.exports = { generateScriptBody, EMIT_SCRIPT_TOOL };
+const EMIT_CLIENT_SCRIPT_TOOL = {
+  name: 'emit_client_script',
+  description: 'Return the generated ServiceNow Client Script.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      scriptBody: {
+        type: 'string',
+        description:
+          'The statements that go inside the event handler function body only — no function wrapper. ' +
+          '`g_form` is already in scope; for onChange, `control`, `oldValue`, `newValue`, `isLoading` are also in scope.',
+      },
+      summary: {
+        type: 'string',
+        description: 'One-sentence plain-English summary of what the script does, for a non-technical approver.',
+      },
+    },
+    required: ['scriptBody', 'summary'],
+  },
+};
+
+function buildClientScriptSystemPrompt(type) {
+  const signature =
+    {
+      onLoad: 'onLoad()',
+      onChange: 'onChange(control, oldValue, newValue, isLoading)',
+      onSubmit: 'onSubmit()',
+    }[type] || `${type}()`;
+
+  return [
+    'You write ServiceNow Client Script bodies — code that runs in the browser via the g_form API.',
+    `The function signature is always \`function ${signature}\` — you only supply the statements inside the body.`,
+    'Use the real g_form client API (e.g. g_form.getValue(), g_form.setValue(), g_form.addInfoMessage()) — do not invent APIs.',
+    'Client scripts run in the browser: no imports, no Node/server APIs, no GlideRecord.',
+    'For onSubmit, return false from the body to block the form submission when needed.',
+    'Keep the script minimal and directly reflect the requested behaviour. Do not add the function wrapper.',
+    'You must respond by calling the emit_client_script tool — do not respond in plain text.',
+  ].join(' ');
+}
+
+/**
+ * @param {object} params
+ * @param {string} params.description - plain-English desired behaviour
+ * @param {string} params.table
+ * @param {'onLoad'|'onChange'|'onSubmit'} params.type
+ * @param {string} [params.field] - required for 'onChange'
+ * @param {object} [opts]
+ * @param {{messages: {create: Function}}} [opts.client] - override for testing
+ * @returns {Promise<{scriptBody: string, summary: string}>}
+ */
+async function generateClientScriptBody({ description, table, type, field }, opts = {}) {
+  const client = opts.client || getDefaultClient();
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 1024,
+    system: buildClientScriptSystemPrompt(type),
+    tools: [EMIT_CLIENT_SCRIPT_TOOL],
+    tool_choice: { type: 'tool', name: EMIT_CLIENT_SCRIPT_TOOL.name },
+    messages: [
+      {
+        role: 'user',
+        content: [
+          `Table: ${table}`,
+          `Trigger: ${type}`,
+          field ? `Field: ${field}` : null,
+          `Desired behaviour: ${description}`,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      },
+    ],
+  });
+
+  const toolUse = response.content.find((block) => block.type === 'tool_use');
+  if (!toolUse) {
+    throw new Error('Claude did not return the expected emit_client_script tool call.');
+  }
+  return toolUse.input;
+}
+
+module.exports = {
+  generateScriptBody,
+  EMIT_SCRIPT_TOOL,
+  generateClientScriptBody,
+  EMIT_CLIENT_SCRIPT_TOOL,
+};
