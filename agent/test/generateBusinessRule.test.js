@@ -69,8 +69,7 @@ test('generateBusinessRule produces a valid .now.ts that passes now-sdk build', 
     artifactType: 'Business Rule',
     name: context.description.slice(0, 80),
     table: 'incident',
-    when: 'before',
-    action: ['insert', 'update'],
+    trigger: 'before insert, update',
     filterCondition: 'category=',
     whatItDoes: 'Blocks the record from saving if the category field is empty.',
   });
@@ -186,7 +185,7 @@ test('generateBusinessRule rejects an unsafe function name from Claude before wr
         { table: 'incident', when: 'before', action: ['insert'], description: 'x' },
         { claudeClient: maliciousClient },
       ),
-    /unsafe function name/,
+    /Unsafe function name/,
   );
 });
 
