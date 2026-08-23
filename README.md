@@ -4,29 +4,26 @@ A Docker-hosted Claude SDK agent, paired with a browser plugin, that creates Ser
 
 ## Status
 
-🚧 Early setup. Repo scaffolding and engineering practices are being established (see [NOW-4](https://stuartmunn.atlassian.net/browse/NOW-4)). No agent code yet.
+🚧 Early build. Repo scaffolding is in place ([NOW-4](https://stuartmunn.atlassian.net/browse/NOW-4)) and the agent container shell runs and exposes a health check ([NOW-8](https://stuartmunn.atlassian.net/browse/NOW-8)). No business logic (now-sdk auth, codegen, approval flow, plugin API) yet — see the [NOW-1 epic](https://stuartmunn.atlassian.net/browse/NOW-1) for what's next.
 
-## Architecture (planned)
+## Architecture
 
-- **Agent (Docker-hosted)** — runs on the Claude SDK, receives requests to generate ServiceNow customizations, and emits Fluent SDK definitions for Business Rules, UI Policies, Client Scripts, and Script Includes.
-- **Browser plugin** — the human-facing surface for reviewing and approving generated artifacts before they're applied to an instance.
+- **Agent (Docker-hosted, `agent/`)** — a Node.js container. Today it's just an HTTP server exposing `GET /healthz`; it will grow to run Claude SDK codegen, emit Fluent SDK (`now-sdk`) definitions for Business Rules, UI Policies, Client Scripts, and Script Includes, and expose a plugin-facing REST API.
+- **Browser plugin** (not yet built) — the human-facing surface for reviewing and approving generated artifacts before they're applied to an instance.
 - **Approval gate** — every artifact requires explicit human sign-off before touching a ServiceNow instance. This is a hard architectural constraint, not a configurable option.
 
-Further detail will be added here as components land.
-
 ## Setup
-
-Not yet runnable — this section will be filled in as the Docker Compose setup and agent scaffolding are built.
-
-Planned:
 
 ```bash
 git clone https://github.com/stuartmunn/nowagent.git
 cd nowagent
-# docker compose up  (once the compose file exists)
+cp now-sdk-credential.example secrets/now-sdk-credential
+# edit secrets/now-sdk-credential with real values (this file is gitignored — never commit it)
+docker compose up --build
+curl http://localhost:8791/healthz
 ```
 
-Credentials will be supplied via Docker Compose file-based secrets (mounted to `/run/secrets/`), never via `.env` files committed to the repo. See [`CLAUDE.md`](CLAUDE.md) for the full secrets policy.
+The agent container binds to the host's network interface (not loopback-only) on port `8791`. The now-sdk credential is supplied via a Docker Compose file-based secret, mounted read-only at `/run/secrets/now_sdk_credential` inside the container — never baked into the image, never in an env var, never committed. See [`CLAUDE.md`](CLAUDE.md) for the full secrets policy and [`now-sdk-credential.example`](now-sdk-credential.example) for the placeholder shape (auth details are still being finalized in NOW-9).
 
 ## Contributing / process
 
