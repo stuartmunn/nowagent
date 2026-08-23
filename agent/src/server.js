@@ -20,7 +20,11 @@ const http = require('node:http');
 const fs = require('node:fs');
 
 const HOST = '0.0.0.0'; // bind to the container's network interface, not loopback-only
-const PORT = Number(process.env.PORT) || 8791; // high port, per DESIGNPRINCIPLES.md #11
+// Default to 8791 (high port, per DESIGNPRINCIPLES.md #11) only when PORT is
+// unset or not a valid number — `|| 8791` would also override an explicit,
+// intentional `PORT=0` (let the OS pick a port), which we don't want.
+const PARSED_PORT = Number(process.env.PORT);
+const PORT = process.env.PORT !== undefined && !Number.isNaN(PARSED_PORT) ? PARSED_PORT : 8791;
 const CREDENTIAL_FILE = process.env.NOW_SDK_CREDENTIAL_FILE || '/run/secrets/now_sdk_credential';
 
 function credentialFilePresent() {
@@ -44,6 +48,11 @@ const server = http.createServer((req, res) => {
 
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'not found' }));
+});
+
+server.on('error', (err) => {
+  console.error(`nowagent agent failed to start: ${err.message}`);
+  process.exit(1);
 });
 
 server.listen(PORT, HOST, () => {
