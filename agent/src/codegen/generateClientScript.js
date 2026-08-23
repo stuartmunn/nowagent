@@ -27,7 +27,7 @@ const crypto = require('node:crypto');
 const { generateClientScriptBody } = require('./claudeClient');
 const { validateFluentWorkspace } = require('./fluentValidate');
 const { FLUENT_DIR, SERVER_DIR, withLock, clearGeneratedDir } = require('./fluentWorkspace');
-const { slugify, escapeSingleQuotes } = require('./textUtils');
+const { slugify, escapeSingleQuotes, escapeTemplateLiteral } = require('./textUtils');
 
 // Scoped to the three trigger types NOW-11 actually asks for. onCellEdit
 // exists in Fluent but its handler signature wasn't verified for this
@@ -87,7 +87,12 @@ function buildFluentSource({ id, name, table, type, field, description, scriptBo
   }
   lines.push(
     `    script: script\`function ${signature} {`,
-    scriptBody,
+    // scriptBody is untrusted LLM output embedded inside a template
+    // literal — a raw backtick or ${...} in it would otherwise break out
+    // of the intended script body and alter the surrounding generated
+    // source (PR Agent caught this; escapeSingleQuotes doesn't cover it
+    // since this isn't a single-quoted string).
+    escapeTemplateLiteral(scriptBody),
     '    }`,',
     '})',
     '',
@@ -118,9 +123,10 @@ async function generateClientScript(context, opts = {}) {
   );
 
   // Client scripts embed the whole handler inline (no separate server
-  // file/import to sanity-check an identifier for) — nothing untrusted is
-  // injected as a bare identifier here, only as a quoted string literal
-  // (already escaped by escapeSingleQuotes).
+  // file/import, so no bare-identifier injection risk like
+  // generateBusinessRule.js's functionName). scriptBody itself is
+  // untrusted LLM output embedded in a template literal — see
+  // escapeTemplateLiteral's use inside buildFluentSource.
   const fluentSource = buildFluentSource({ id, name, table, type, field, description, scriptBody });
   const fluentFilePath = path.join(FLUENT_DIR, `${id}.now.ts`);
 

@@ -20,6 +20,21 @@ function escapeSingleQuotes(str) {
 }
 
 /**
+ * Escapes a string for safe embedding inside a JS/TS template literal
+ * (`...`). Use this — not escapeSingleQuotes — for any untrusted content
+ * placed inside a backtick-delimited template, e.g. a Client Script's
+ * `script\`...\`` body: an unescaped backtick or `${` would otherwise let
+ * the content break out of the template and alter the surrounding
+ * generated source.
+ */
+function escapeTemplateLiteral(str) {
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${');
+}
+
+/**
  * Throws if `name` isn't a plain JS identifier. Use before injecting any
  * LLM-supplied string into generated source as an identifier (function
  * name, export name, import specifier) — it's untrusted model output.
@@ -30,4 +45,4 @@ function assertSafeIdentifier(name, label = 'identifier') {
   }
 }
 
-module.exports = { slugify, escapeSingleQuotes, assertSafeIdentifier, SAFE_IDENTIFIER };
+module.exports = { slugify, escapeSingleQuotes, escapeTemplateLiteral, assertSafeIdentifier, SAFE_IDENTIFIER };

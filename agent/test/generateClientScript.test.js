@@ -93,6 +93,45 @@ test('generateClientScript produces a valid onChange .now.ts with the field prop
   assert.equal(result.summary.trigger, 'onChange of priority');
 });
 
+test('a scriptBody containing a backtick and ${} does not break out of the generated template literal', async (t) => {
+  const injectionClient = {
+    messages: {
+      async create() {
+        return {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'emit_client_script',
+              input: {
+                // Deliberately malicious-shaped output: a backtick would
+                // close the outer script`...` template early, and ${...}
+                // would be evaluated as a template expression, if either
+                // were injected unescaped (the exact bug PR Agent flagged).
+                scriptBody: "  g_form.addInfoMessage(`hi`); }); BusinessRule({ $id: 'x', script: () => { return `${1+1}",
+                summary: 'Attempts a template-literal injection.',
+              },
+            },
+          ],
+        };
+      },
+    },
+  };
+
+  const result = await generateClientScript(
+    { table: 'incident', type: 'onLoad', description: 'x' },
+    { claudeClient: injectionClient },
+  );
+  t.after(() => fs.rmSync(result.fluentFilePath, { force: true }));
+
+  // The escaped backtick/${ must appear literally in the source, and the
+  // generated file must still be a single well-formed ClientScript call —
+  // not two, and now-sdk build must still succeed against the escaped text.
+  assert.match(result.fluentSource, /\\`hi\\`/);
+  assert.match(result.fluentSource, /\\\$\{1\+1\}/);
+  assert.equal((result.fluentSource.match(/ClientScript\(\{/g) || []).length, 1);
+  assert.equal(result.validation.valid, true, `escaped injection attempt should still build cleanly:\n${result.validation.output}`);
+});
+
 test('generateClientScript rejects onChange without a field before calling Claude', async () => {
   await assert.rejects(
     () => generateClientScript({ table: 'incident', type: 'onChange', description: 'x' }),
