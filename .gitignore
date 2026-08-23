@@ -5,6 +5,7 @@
 .env.*
 !.env.example
 *secret*
+!*secret*.example
 /secrets/
 *.pem
 *.key
@@ -26,6 +27,9 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# --- Claude Code local session state ---
+.claude/
 
 # --- OS / editor cruft ---
 .DS_Store
