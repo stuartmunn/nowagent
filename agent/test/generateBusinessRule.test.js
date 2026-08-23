@@ -117,6 +117,79 @@ test('generateBusinessRule surfaces a real now-sdk build failure for invalid gen
   assert.match(result.validation.output, /thisMethodDoesNotExist/);
 });
 
+test('a failed generation does not poison a later successful one', async (t) => {
+  const badClient = {
+    messages: {
+      async create() {
+        return {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'emit_business_rule_script',
+              input: {
+                functionName: 'broken2',
+                scriptBody: "  current.thisMethodAlsoDoesNotExist();",
+                summary: 'Deliberately broken.',
+              },
+            },
+          ],
+        };
+      },
+    },
+  };
+
+  const failed = await generateBusinessRule(
+    { table: 'incident', when: 'before', action: ['insert'], description: 'broken' },
+    { claudeClient: badClient },
+  );
+  assert.equal(failed.validation.valid, false);
+
+  // A subsequent, valid generation must succeed on its own merits — the
+  // previous failed candidate must not still be sitting in the workspace
+  // (this is the exact bug PR Agent flagged on this story's first review).
+  const succeeded = await generateBusinessRule(
+    { table: 'incident', when: 'before', action: ['insert'], description: 'Prevent saving an incident if the category field is empty.' },
+    { claudeClient: stubClaudeClient },
+  );
+  t.after(() => {
+    fs.rmSync(succeeded.fluentFilePath, { force: true });
+    fs.rmSync(succeeded.serverFilePath, { force: true });
+  });
+
+  assert.equal(succeeded.validation.valid, true, `should not be poisoned by the prior failure:\n${succeeded.validation.output}`);
+});
+
+test('generateBusinessRule rejects an unsafe function name from Claude before writing any file', async () => {
+  const maliciousClient = {
+    messages: {
+      async create() {
+        return {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'emit_business_rule_script',
+              input: {
+                functionName: "x; process.exit(1); //",
+                scriptBody: '  gs.addInfoMessage("x");',
+                summary: 'x',
+              },
+            },
+          ],
+        };
+      },
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      generateBusinessRule(
+        { table: 'incident', when: 'before', action: ['insert'], description: 'x' },
+        { claudeClient: maliciousClient },
+      ),
+    /unsafe function name/,
+  );
+});
+
 test('generateBusinessRule rejects an invalid context before calling Claude', async () => {
   await assert.rejects(
     () => generateBusinessRule({ table: 'incident', when: 'sometime', action: ['insert'], description: 'x' }),

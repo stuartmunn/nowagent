@@ -22,6 +22,27 @@ const SERVER_DIR = path.join(FLUENT_WORKSPACE_DIR, 'src', 'server', 'generated')
 
 const VALID_WHEN = new Set(['before', 'after', 'async', 'display']);
 const VALID_ACTIONS = new Set(['insert', 'update', 'delete', 'query']);
+const SAFE_IDENTIFIER = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
+// now-sdk build type-checks the *entire* Fluent workspace, not just the
+// artifact just written — so this module treats FLUENT_DIR/SERVER_DIR as
+// single-slot scratch space (cleared before every generation) and serializes
+// calls with this lock. Together that means at most one candidate artifact
+// ever exists on disk during a build, which avoids two failure modes PR
+// Agent correctly flagged on this story's first review: a stale invalid
+// file from a previous call permanently failing every later validation,
+// and concurrent calls' files cross-contaminating each other's build.
+let lock = Promise.resolve();
+function withLock(fn) {
+  const result = lock.then(fn, fn);
+  lock = result.catch(() => {});
+  return result;
+}
+
+function clearGeneratedDir(dir) {
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+}
 
 function slugify(text) {
   const slug = String(text)
@@ -52,7 +73,11 @@ function assertValidContext(context) {
 }
 
 function escapeSingleQuotes(str) {
-  return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n');
 }
 
 function buildServerSource(functionName, scriptBody) {
@@ -110,17 +135,29 @@ async function generateBusinessRule(context, opts = {}) {
     { client: opts.claudeClient },
   );
 
+  // functionName is untrusted LLM output injected verbatim as a JS
+  // identifier (export name + import specifier) into generated source —
+  // reject anything that isn't a plain identifier before it touches disk.
+  if (!SAFE_IDENTIFIER.test(functionName)) {
+    throw new Error(`Claude returned an unsafe function name: ${JSON.stringify(functionName)}`);
+  }
+
   const serverSource = buildServerSource(functionName, scriptBody);
   const fluentSource = buildFluentSource({ id, name, table, when, action, filterCondition, functionName });
-
-  fs.mkdirSync(FLUENT_DIR, { recursive: true });
-  fs.mkdirSync(SERVER_DIR, { recursive: true });
   const fluentFilePath = path.join(FLUENT_DIR, `${id}.now.ts`);
   const serverFilePath = path.join(SERVER_DIR, `${id}.ts`);
-  fs.writeFileSync(fluentFilePath, fluentSource, 'utf8');
-  fs.writeFileSync(serverFilePath, serverSource, 'utf8');
 
-  const validation = await validateFluentWorkspace();
+  const validation = await withLock(async () => {
+    // Single-slot scratch space: clear any previous candidate before writing
+    // this one, so a stale invalid file from an earlier call (or a
+    // concurrent one) can never poison this build. See the lock/clear
+    // comment above FLUENT_DIR's declaration for why.
+    clearGeneratedDir(FLUENT_DIR);
+    clearGeneratedDir(SERVER_DIR);
+    fs.writeFileSync(fluentFilePath, fluentSource, 'utf8');
+    fs.writeFileSync(serverFilePath, serverSource, 'utf8');
+    return validateFluentWorkspace();
+  });
 
   return {
     id,
