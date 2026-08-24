@@ -223,3 +223,48 @@ test('a session object cannot be mutated directly — only decide() can change i
     approved.state = 'rejected';
   }, TypeError);
 });
+
+// PR Agent escalated (NOW-12 review, second pass): a shallow freeze still
+// let session.artifact.scriptBody or a narrative field be mutated post-
+// approval without touching state/readyToApply at all — silently changing
+// what would get applied versus what was actually approved.
+test('nested artifact/narrative/history fields cannot be mutated either — freeze is deep', async () => {
+  const session = await startApprovalSession({
+    generate: fakeGenerate,
+    context: baseContext(),
+    opts: { claudeClient: stubNarrativeClient },
+  });
+  const approved = await decide(session, 'approve');
+
+  assert.throws(() => {
+    approved.artifact.scriptBody = 'gs.addInfoMessage("something never approved");';
+  }, TypeError);
+  assert.throws(() => {
+    approved.narrative.typeJustification = 'something never approved';
+  }, TypeError);
+  assert.match(approved.artifact.scriptBody, /^GENERATED FOR: Do the test thing\.$/, 'the mutation attempt must not have taken effect');
+
+  const revised = await decide(
+    await startApprovalSession({ generate: fakeGenerate, context: baseContext(), opts: { claudeClient: stubNarrativeClient } }),
+    'revise',
+    { feedback: 'x' },
+  );
+  assert.throws(() => {
+    revised.history.push({ feedback: 'injected', previousArtifactId: 'x' });
+  }, TypeError);
+  assert.throws(() => {
+    revised.history[0].feedback = 'tampered';
+  }, TypeError);
+});
+
+// PR Agent's deep-freeze fix touches the context object too — must not
+// freeze the caller's own object out from under them as a side effect of
+// just calling startApprovalSession().
+test('starting a session does not freeze the caller\'s own context object', async () => {
+  const callerContext = baseContext();
+
+  await startApprovalSession({ generate: fakeGenerate, context: callerContext, opts: { claudeClient: stubNarrativeClient } });
+
+  assert.equal(Object.isFrozen(callerContext), false);
+  callerContext.description = 'the caller can still do whatever they want with their own object';
+});

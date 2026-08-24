@@ -21,13 +21,18 @@
  * "Immutable-ish" was only true by convention until PR Agent pointed out
  * nothing actually stopped a caller from doing `session.state = 'approved'`
  * directly, bypassing decide() entirely — a real problem for a module whose
- * whole job is being a trustworthy governance gate. Every session object
- * returned from this file is now Object.frozen (shallow — top-level fields
- * only) so that kind of mutation throws (this file is 'use strict') instead
- * of silently succeeding. Nested collaborators (context/artifact/narrative)
- * aren't deep-frozen: nothing in this module ever mutates them in place
- * (revise builds a new context/artifact each time), so the governance-
- * relevant fields (state, readyToApply) are what actually need protecting.
+ * whole job is being a trustworthy governance gate. A first pass only
+ * shallow-froze the top-level session object; PR Agent correctly escalated
+ * that this still let `session.artifact.scriptBody` or a `narrative` field
+ * be mutated post-approval without touching state/readyToApply at all —
+ * silently changing what would actually get applied versus what a
+ * consultant approved, which is the exact guarantee this module exists to
+ * provide. Every session object is now deep-frozen (context/artifact/
+ * narrative/history, recursively) — a mutation attempt anywhere in that
+ * tree now throws (this file is 'use strict') instead of silently
+ * succeeding. `generate` (a function) and `opts` (may hold a caller-owned
+ * Claude client) are deliberately left out of the freeze — they're
+ * operational plumbing this module doesn't own, not approved content.
  */
 
 const crypto = require('node:crypto');
@@ -35,7 +40,22 @@ const { generateApprovalStatement } = require('./generateApprovalStatement');
 
 const TERMINAL_STATES = new Set(['approved', 'rejected']);
 
+function deepFreeze(value) {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) {
+    return value;
+  }
+  Object.freeze(value);
+  for (const key of Object.getOwnPropertyNames(value)) {
+    deepFreeze(value[key]);
+  }
+  return value;
+}
+
 function freezeSession(session) {
+  deepFreeze(session.context);
+  deepFreeze(session.artifact);
+  deepFreeze(session.narrative);
+  deepFreeze(session.history);
   return Object.freeze(session);
 }
 
@@ -67,7 +87,11 @@ async function startApprovalSession({ generate, context, opts = {} }) {
     // inconsistency).
     readyToApply: false,
     generate,
-    context,
+    // A shallow copy, not the caller's own object — freezeSession deep-
+    // freezes this field, and freezing an object we don't own out from
+    // under the caller (who may want to reuse it elsewhere) would be a
+    // surprising side effect of just calling startApprovalSession().
+    context: { ...context },
     opts,
     artifact,
     statement,
