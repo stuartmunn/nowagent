@@ -57,7 +57,12 @@ test('generateClientScript produces a valid onLoad .now.ts that passes now-sdk b
     trigger: 'onLoad',
     filterCondition: null,
     whatItDoes: 'Shows a message when the incident form loads.',
+    uiType: 'all',
+    isolateScript: false,
+    global: true,
   });
+  // NOW-12 (approval statement) reads the raw script body directly.
+  assert.equal(result.scriptBody, "  g_form.addInfoMessage('Table loaded successfully!!');");
 });
 
 test('generateClientScript produces a valid onChange .now.ts with the field property set', async (t) => {

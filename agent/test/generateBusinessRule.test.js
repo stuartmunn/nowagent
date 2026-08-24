@@ -72,7 +72,10 @@ test('generateBusinessRule produces a valid .now.ts that passes now-sdk build', 
     trigger: 'before insert, update',
     filterCondition: 'category=',
     whatItDoes: 'Blocks the record from saving if the category field is empty.',
+    order: 100,
   });
+  // NOW-12 (approval statement) reads the raw script body directly.
+  assert.equal(result.scriptBody, "  if (!current.getValue('category')) {\n    current.setAbortAction(true);\n  }");
 });
 
 test('generateBusinessRule surfaces a real now-sdk build failure for invalid generated script', async (t) => {

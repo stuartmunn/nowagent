@@ -145,6 +145,9 @@ async function generateClientScript(context, opts = {}) {
     id,
     fluentFilePath,
     fluentSource,
+    // Raw, unescaped script body (pre-embedding) — see the matching comment
+    // in generateBusinessRule.js.
+    scriptBody,
     validation,
     // Same shape as generateBusinessRule.js's summary (NOW-10) — see that
     // file's comment. filterCondition doesn't apply to Client Scripts (null).
@@ -155,6 +158,13 @@ async function generateClientScript(context, opts = {}) {
       trigger: field ? `${type} of ${field}` : type,
       filterCondition: null,
       whatItDoes: scriptSummary,
+      // uiType/isolateScript/global aren't context-driven (see
+      // buildFluentSource above — hardcoded for MVP), but the approval
+      // statement template needs to state them explicitly (NOW-12), so
+      // they're surfaced here rather than duplicated as literals elsewhere.
+      uiType: 'all',
+      isolateScript: false,
+      global: true,
     },
   };
 }
