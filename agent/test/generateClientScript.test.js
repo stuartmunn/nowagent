@@ -144,6 +144,35 @@ test('generateClientScript rejects onChange without a field before calling Claud
   );
 });
 
+// PR Agent flagged (NOW-12 review): the approval-narrative tool calls
+// validated Claude's response shape but this one didn't — inconsistent.
+// Now validated in claudeClient.js's generateClientScriptBody.
+test('generateClientScript rejects a malformed script response from Claude (missing scriptBody)', async () => {
+  const malformedClient = {
+    messages: {
+      async create() {
+        return {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'emit_client_script',
+              input: {
+                summary: 'x',
+                // scriptBody deliberately omitted
+              },
+            },
+          ],
+        };
+      },
+    },
+  };
+
+  await assert.rejects(
+    () => generateClientScript({ table: 'incident', type: 'onLoad', description: 'x' }, { claudeClient: malformedClient }),
+    /malformed emit_client_script tool call: scriptBody must be a non-empty string/,
+  );
+});
+
 test('generateClientScript rejects an invalid type', async () => {
   await assert.rejects(
     () => generateClientScript({ table: 'incident', type: 'onHover', description: 'x' }),

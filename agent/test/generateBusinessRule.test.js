@@ -202,3 +202,39 @@ test('generateBusinessRule rejects an invalid context before calling Claude', as
 test('sanity: fluent workspace directory resolves inside the agent package', () => {
   assert.match(FLUENT_WORKSPACE_DIR, /fluent-workspace$/);
 });
+
+// PR Agent flagged (NOW-12 review): the approval-narrative tool calls
+// validated Claude's response shape but this one didn't — inconsistent,
+// and a real gap (assertSafeIdentifier doesn't reliably catch an
+// undefined functionName, since String(undefined) is itself a valid
+// identifier). Now validated in claudeClient.js's generateScriptBody.
+test('generateBusinessRule rejects a malformed script response from Claude (missing functionName)', async () => {
+  const malformedClient = {
+    messages: {
+      async create() {
+        return {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'emit_business_rule_script',
+              input: {
+                scriptBody: '  gs.addInfoMessage("x");',
+                summary: 'x',
+                // functionName deliberately omitted
+              },
+            },
+          ],
+        };
+      },
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      generateBusinessRule(
+        { table: 'incident', when: 'before', action: ['insert'], description: 'x' },
+        { claudeClient: malformedClient },
+      ),
+    /malformed emit_business_rule_script tool call: functionName must be a non-empty string/,
+  );
+});

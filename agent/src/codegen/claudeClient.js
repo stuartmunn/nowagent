@@ -19,6 +19,24 @@ const Anthropic = require('@anthropic-ai/sdk');
 const API_KEY_FILE = process.env.ANTHROPIC_API_KEY_FILE || '/run/secrets/anthropic_api_key';
 const MODEL = process.env.CLAUDE_CODEGEN_MODEL || 'claude-sonnet-5';
 
+// A tool schema's `required` list is a hint to the model, not a runtime
+// guarantee — the API can still return a response missing a field or with
+// the wrong type. Used at every tool-call boundary in this file (codegen
+// and approval-narrative alike) so a malformed response fails fast with a
+// clear error here, rather than surfacing later as a cryptic error deep
+// inside whatever consumes it (e.g. a bare `undefined` silently embedded
+// into generated source, or a TypeError inside statement rendering).
+function assertRequiredStringFields(input, fields, toolName) {
+  if (!input || typeof input !== 'object') {
+    throw new Error(`Claude returned a malformed ${toolName} tool call: no input object.`);
+  }
+  for (const field of fields) {
+    if (typeof input[field] !== 'string' || input[field].length === 0) {
+      throw new Error(`Claude returned a malformed ${toolName} tool call: ${field} must be a non-empty string.`);
+    }
+  }
+}
+
 function readApiKey() {
   try {
     return fs.readFileSync(API_KEY_FILE, 'utf8').trim();
@@ -113,6 +131,12 @@ async function generateScriptBody({ description, table, when, action }, opts = {
   if (!toolUse) {
     throw new Error('Claude did not return the expected emit_business_rule_script tool call.');
   }
+  // PR Agent flagged (NOW-12 review): this returned unvalidated while the
+  // approval-narrative calls below already validated theirs — inconsistent,
+  // and a real gap: assertSafeIdentifier (generateBusinessRule.js) doesn't
+  // reliably catch an undefined functionName, since String(undefined) is
+  // itself a syntactically valid identifier.
+  assertRequiredStringFields(toolUse.input, ['functionName', 'scriptBody', 'summary'], EMIT_SCRIPT_TOOL.name);
   return toolUse.input;
 }
 
@@ -194,6 +218,7 @@ async function generateClientScriptBody({ description, table, type, field }, opt
   if (!toolUse) {
     throw new Error('Claude did not return the expected emit_client_script tool call.');
   }
+  assertRequiredStringFields(toolUse.input, ['scriptBody', 'summary'], EMIT_CLIENT_SCRIPT_TOOL.name);
   return toolUse.input;
 }
 
@@ -214,24 +239,14 @@ async function generateClientScriptBody({ description, table, type, field }, opt
 // approval-statement renderer states this honestly rather than having
 // Claude guess at something it cannot know (see generateApprovalStatement.js).
 //
-// A tool schema's `required` list is a hint to the model, not a runtime
-// guarantee — the API can still return a response missing a field or with
-// the wrong type. Since this narrative text becomes the actual governance
-// document a human decides Approve/Revise/Reject against, validate its
-// shape right here, at the boundary, so a malformed response fails fast
-// with a clear error instead of surfacing later as a cryptic TypeError deep
-// inside generateApprovalStatement.js's rendering (PR Agent caught this).
+// Narrative responses have one extra shape requirement on top of
+// assertRequiredStringFields (above): logicSteps must be a non-empty array
+// of non-empty strings, since this narrative text becomes the actual
+// governance document a human decides Approve/Revise/Reject against.
 function assertNarrativeShape(input, stringFields, toolName) {
-  if (!input || typeof input !== 'object') {
-    throw new Error(`Claude returned a malformed ${toolName} tool call: no input object.`);
-  }
+  assertRequiredStringFields(input, stringFields, toolName);
   if (!Array.isArray(input.logicSteps) || input.logicSteps.length === 0 || !input.logicSteps.every((s) => typeof s === 'string' && s.length > 0)) {
     throw new Error(`Claude returned a malformed ${toolName} tool call: logicSteps must be a non-empty array of non-empty strings.`);
-  }
-  for (const field of stringFields) {
-    if (typeof input[field] !== 'string' || input[field].length === 0) {
-      throw new Error(`Claude returned a malformed ${toolName} tool call: ${field} must be a non-empty string.`);
-    }
   }
 }
 
