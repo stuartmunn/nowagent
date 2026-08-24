@@ -213,6 +213,27 @@ async function generateClientScriptBody({ description, table, type, field }, opt
 // which this MVP has no connection to (NOW-9 is blocked on NOW-3/5/7). The
 // approval-statement renderer states this honestly rather than having
 // Claude guess at something it cannot know (see generateApprovalStatement.js).
+//
+// A tool schema's `required` list is a hint to the model, not a runtime
+// guarantee — the API can still return a response missing a field or with
+// the wrong type. Since this narrative text becomes the actual governance
+// document a human decides Approve/Revise/Reject against, validate its
+// shape right here, at the boundary, so a malformed response fails fast
+// with a clear error instead of surfacing later as a cryptic TypeError deep
+// inside generateApprovalStatement.js's rendering (PR Agent caught this).
+function assertNarrativeShape(input, stringFields, toolName) {
+  if (!input || typeof input !== 'object') {
+    throw new Error(`Claude returned a malformed ${toolName} tool call: no input object.`);
+  }
+  if (!Array.isArray(input.logicSteps) || input.logicSteps.length === 0 || !input.logicSteps.every((s) => typeof s === 'string' && s.length > 0)) {
+    throw new Error(`Claude returned a malformed ${toolName} tool call: logicSteps must be a non-empty array of non-empty strings.`);
+  }
+  for (const field of stringFields) {
+    if (typeof input[field] !== 'string' || input[field].length === 0) {
+      throw new Error(`Claude returned a malformed ${toolName} tool call: ${field} must be a non-empty string.`);
+    }
+  }
+}
 
 const EMIT_BR_APPROVAL_NARRATIVE_TOOL = {
   name: 'emit_business_rule_approval_narrative',
@@ -314,6 +335,11 @@ async function generateBusinessRuleApprovalNarrative(
   if (!toolUse) {
     throw new Error('Claude did not return the expected emit_business_rule_approval_narrative tool call.');
   }
+  assertNarrativeShape(
+    toolUse.input,
+    ['dataTouched', 'conditionEnglish', 'privilegeFlag', 'typeJustification'],
+    EMIT_BR_APPROVAL_NARRATIVE_TOOL.name,
+  );
   return toolUse.input;
 }
 
@@ -408,6 +434,7 @@ async function generateClientScriptApprovalNarrative({ description, table, type,
   if (!toolUse) {
     throw new Error('Claude did not return the expected emit_client_script_approval_narrative tool call.');
   }
+  assertNarrativeShape(toolUse.input, ['dataTouched', 'securityFlag', 'typeJustification'], EMIT_CS_APPROVAL_NARRATIVE_TOOL.name);
   return toolUse.input;
 }
 

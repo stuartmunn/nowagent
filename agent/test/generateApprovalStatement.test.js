@@ -20,6 +20,10 @@ const fs = require('node:fs');
 const { generateBusinessRule } = require('../src/codegen/generateBusinessRule');
 const { generateClientScript } = require('../src/codegen/generateClientScript');
 const { generateApprovalStatement } = require('../src/approval/generateApprovalStatement');
+const {
+  generateBusinessRuleApprovalNarrative,
+  generateClientScriptApprovalNarrative,
+} = require('../src/codegen/claudeClient');
 
 const codegenBrClient = {
   messages: {
@@ -184,5 +188,75 @@ test('generateApprovalStatement rejects an artifact missing scriptBody', async (
   await assert.rejects(
     () => generateApprovalStatement({}, { summary: { artifactType: 'Business Rule' } }),
     /artifact must be the return value of/,
+  );
+});
+
+// PR Agent flagged (NOW-12 review): a tool schema's `required` list is a
+// hint to the model, not a runtime guarantee — this narrative text becomes
+// the actual governance document, so a malformed response must fail fast
+// and clearly rather than surfacing later as a cryptic TypeError deep
+// inside rendering.
+test('generateBusinessRuleApprovalNarrative rejects a malformed tool response (missing logicSteps)', async () => {
+  const malformedClient = {
+    messages: {
+      async create() {
+        return {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'emit_business_rule_approval_narrative',
+              input: {
+                dataTouched: 'x',
+                conditionEnglish: 'x',
+                privilegeFlag: 'x',
+                typeJustification: 'x',
+                // logicSteps deliberately omitted
+              },
+            },
+          ],
+        };
+      },
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      generateBusinessRuleApprovalNarrative(
+        { description: 'x', table: 'incident', when: 'after', action: ['update'], filterCondition: null, scriptBody: 'x' },
+        { client: malformedClient },
+      ),
+    /malformed emit_business_rule_approval_narrative tool call: logicSteps must be a non-empty array/,
+  );
+});
+
+test('generateClientScriptApprovalNarrative rejects a malformed tool response (empty string field)', async () => {
+  const malformedClient = {
+    messages: {
+      async create() {
+        return {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'emit_client_script_approval_narrative',
+              input: {
+                logicSteps: ['Step one.'],
+                dataTouched: 'x',
+                securityFlag: '', // deliberately empty
+                typeJustification: 'x',
+              },
+            },
+          ],
+        };
+      },
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      generateClientScriptApprovalNarrative(
+        { description: 'x', table: 'incident', type: 'onLoad', scriptBody: 'x' },
+        { client: malformedClient },
+      ),
+    /malformed emit_client_script_approval_narrative tool call: securityFlag must be a non-empty string/,
   );
 });
