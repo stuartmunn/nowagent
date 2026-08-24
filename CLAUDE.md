@@ -29,7 +29,7 @@ This repo has the PR Agent GitHub App installed. The loop for every PR:
 2. Wait a few minutes for PR Agent to post its automated review comment, then read it.
 3. Action any valid suggestions: fix the code and push a follow-up commit. Use judgement to reject or skip suggestions that are wrong or don't apply — but always record why.
 4. **Comment on the PR when actioning feedback.** Reply to PR Agent's comment (or post a new one) stating what was changed and why, for each suggestion actioned, and why for anything deliberately skipped. Never leave the thread with pushed commits and no explanation — the comment trail is how Stuart (or future-Claude) sees what was decided without re-diffing everything.
-5. A second commit does **not** auto-retrigger PR Agent. Comment `/review` on the PR to force a fresh review after pushing further commits.
+5. A second commit does **not** auto-retrigger PR Agent. Post `/review` as its **own standalone comment** — not appended to the end of the explanation comment from step 4 — to force a fresh review after pushing further commits. PR Agent doesn't reliably treat `/review` as a command when it's part of a larger comment body; it must be the entire comment.
 6. Repeat review → fix → comment → `/review` until PR Agent has no further valid observations.
 7. Once clean, Claude Code may merge the PR itself — no separate human sign-off is required for merge. (The governance approval gate in `DESIGNPRINCIPLES.md` is about ServiceNow artifacts being applied to an instance, not about this repo's PRs.)
 
@@ -58,6 +58,6 @@ Keep [`README.md`](README.md) current as part of every push, not just at project
 - [ ] Commit with no secrets in the diff or history.
 - [ ] Update `README.md` if the change affects setup, architecture, or status.
 - [ ] Open PR; Jira → Review; comment on Jira linking the PR.
-- [ ] Wait for PR Agent, action/skip feedback with recorded reasoning, comment on the PR, `/review` to re-trigger, repeat until clean.
+- [ ] Wait for PR Agent, action/skip feedback with recorded reasoning, comment on the PR, then post `/review` as its own separate comment to re-trigger, repeat until clean.
 - [ ] Merge PR.
 - [ ] Jira → Complete, comment noting merge.
