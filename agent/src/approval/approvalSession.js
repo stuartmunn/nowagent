@@ -43,6 +43,14 @@ async function startApprovalSession({ generate, context, opts = {} }) {
   return {
     id: crypto.randomUUID(),
     state: 'pending',
+    // Explicit false, not left undefined — decide() always sets this
+    // field explicitly (true on approve, false on reject/revise), so a
+    // freshly-started session must too. Any downstream consumer (NOW-13's
+    // deploy gate) should only ever need `readyToApply === true` to decide
+    // whether to apply, but this keeps the field's presence consistent
+    // across every state rather than relying on that (PR Agent caught the
+    // inconsistency).
+    readyToApply: false,
     generate,
     context,
     opts,

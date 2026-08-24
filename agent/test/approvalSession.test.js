@@ -85,6 +85,9 @@ test('startApprovalSession produces a pending session with an artifact and state
   assert.match(session.artifact.scriptBody, /^GENERATED FOR: Do the test thing\.$/);
   assert.match(session.statement, /Approve \/ Revise \/ Reject\?$/);
   assert.deepEqual(session.history, []);
+  // PR Agent flagged (NOW-12 review): a freshly-started session left
+  // readyToApply undefined while decide() always sets it explicitly.
+  assert.equal(session.readyToApply, false);
 });
 
 test('approve marks the session approved and ready to apply, without touching the artifact', async () => {
