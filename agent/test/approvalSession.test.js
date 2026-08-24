@@ -268,3 +268,18 @@ test('starting a session does not freeze the caller\'s own context object', asyn
   assert.equal(Object.isFrozen(callerContext), false);
   callerContext.description = 'the caller can still do whatever they want with their own object';
 });
+
+// PR Agent flagged (NOW-12 review, third pass): the previous fix
+// (`{ ...context }`) was only a shallow copy — a nested reference like
+// context.action (an array) still pointed at the caller's own array, so
+// deep-freezing session.context froze that shared array out from under
+// them too. Now uses structuredClone for a real deep copy.
+test('starting a session does not freeze nested fields of the caller\'s own context object either', async () => {
+  const callerContext = baseContext({ action: ['update'] });
+
+  await startApprovalSession({ generate: fakeGenerate, context: callerContext, opts: { claudeClient: stubNarrativeClient } });
+
+  assert.equal(Object.isFrozen(callerContext.action), false);
+  callerContext.action.push('insert'); // must not throw
+  assert.deepEqual(callerContext.action, ['update', 'insert']);
+});

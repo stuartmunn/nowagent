@@ -87,11 +87,18 @@ async function startApprovalSession({ generate, context, opts = {} }) {
     // inconsistency).
     readyToApply: false,
     generate,
-    // A shallow copy, not the caller's own object — freezeSession deep-
+    // A deep clone, not the caller's own object — freezeSession deep-
     // freezes this field, and freezing an object we don't own out from
     // under the caller (who may want to reuse it elsewhere) would be a
-    // surprising side effect of just calling startApprovalSession().
-    context: { ...context },
+    // surprising side effect of just calling startApprovalSession(). A
+    // shallow `{ ...context }` isn't enough: nested fields like context's
+    // `action` array would still be the *same* array the caller owns, so
+    // deep-freezing session.context would freeze that shared reference too
+    // (PR Agent caught this — the shallow-copy fix from the previous
+    // commit was itself incomplete). context is plain structured data
+    // (strings/arrays/null per generateBusinessRule.js/generateClientScript.js's
+    // assertValidContext), so structuredClone is a correct, simple deep copy.
+    context: structuredClone(context),
     opts,
     artifact,
     statement,
