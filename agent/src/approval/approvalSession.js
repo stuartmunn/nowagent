@@ -17,12 +17,27 @@
  * responsible for holding onto whichever session object is current (e.g.
  * keyed by session id in whatever calls this — the plugin-facing API,
  * NOW-14 — once it exists).
+ *
+ * "Immutable-ish" was only true by convention until PR Agent pointed out
+ * nothing actually stopped a caller from doing `session.state = 'approved'`
+ * directly, bypassing decide() entirely — a real problem for a module whose
+ * whole job is being a trustworthy governance gate. Every session object
+ * returned from this file is now Object.frozen (shallow — top-level fields
+ * only) so that kind of mutation throws (this file is 'use strict') instead
+ * of silently succeeding. Nested collaborators (context/artifact/narrative)
+ * aren't deep-frozen: nothing in this module ever mutates them in place
+ * (revise builds a new context/artifact each time), so the governance-
+ * relevant fields (state, readyToApply) are what actually need protecting.
  */
 
 const crypto = require('node:crypto');
 const { generateApprovalStatement } = require('./generateApprovalStatement');
 
 const TERMINAL_STATES = new Set(['approved', 'rejected']);
+
+function freezeSession(session) {
+  return Object.freeze(session);
+}
 
 /**
  * @param {object} params
@@ -40,7 +55,7 @@ async function startApprovalSession({ generate, context, opts = {} }) {
   const artifact = await generate(context, opts);
   const { text: statement, narrative } = await generateApprovalStatement(context, artifact, opts);
 
-  return {
+  return freezeSession({
     id: crypto.randomUUID(),
     state: 'pending',
     // Explicit false, not left undefined — decide() always sets this
@@ -62,7 +77,7 @@ async function startApprovalSession({ generate, context, opts = {} }) {
     // template's own note: "no cap set for MVP; revisit if it becomes a
     // problem in practice").
     history: [],
-  };
+  });
 }
 
 /**
@@ -84,19 +99,19 @@ async function decide(session, action, { feedback } = {}) {
     // Applying the change is NOW-13's job, not this module's — this only
     // marks the session as cleared to apply. No file is written, no
     // now-sdk command is run here.
-    return { ...session, state: 'approved', readyToApply: true };
+    return freezeSession({ ...session, state: 'approved', readyToApply: true });
   }
 
   if (action === 'reject') {
     // Discard the artifact and statement outright — a rejected session
     // carries nothing forward that a caller could accidentally apply.
-    return {
+    return freezeSession({
       id: session.id,
       state: 'rejected',
       readyToApply: false,
       context: session.context,
       history: session.history,
-    };
+    });
   }
 
   if (action === 'revise') {
@@ -110,7 +125,7 @@ async function decide(session, action, { feedback } = {}) {
     const artifact = await session.generate(revisedContext, session.opts);
     const { text: statement, narrative } = await generateApprovalStatement(revisedContext, artifact, session.opts);
 
-    return {
+    return freezeSession({
       ...session,
       state: 'pending',
       readyToApply: false,
@@ -119,7 +134,7 @@ async function decide(session, action, { feedback } = {}) {
       statement,
       narrative,
       history: [...session.history, { feedback, previousArtifactId: session.artifact.id }],
-    };
+    });
   }
 
   throw new Error(`Unknown decision "${action}" — must be one of: approve, revise, reject`);

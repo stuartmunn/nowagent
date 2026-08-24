@@ -197,3 +197,29 @@ test('deciding on a rejected (terminal) session is rejected', async () => {
 
   await assert.rejects(() => decide(rejected, 'approve'), /already in terminal state "rejected"/);
 });
+
+// PR Agent flagged (NOW-12 review): nothing stopped a caller from directly
+// mutating session.state / session.readyToApply in place, bypassing
+// decide() entirely — undermining this module's whole purpose as a
+// governance gate. Every session returned by this module is now frozen.
+test('a session object cannot be mutated directly — only decide() can change its state', async () => {
+  const session = await startApprovalSession({
+    generate: fakeGenerate,
+    context: baseContext(),
+    opts: { claudeClient: stubNarrativeClient },
+  });
+
+  assert.throws(() => {
+    session.state = 'approved';
+  }, TypeError);
+  assert.throws(() => {
+    session.readyToApply = true;
+  }, TypeError);
+  assert.equal(session.state, 'pending', 'the mutation attempt must not have taken effect');
+  assert.equal(session.readyToApply, false);
+
+  const approved = await decide(session, 'approve');
+  assert.throws(() => {
+    approved.state = 'rejected';
+  }, TypeError);
+});
