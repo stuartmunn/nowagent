@@ -123,6 +123,11 @@ async function generateBusinessRule(context, opts = {}) {
     serverFilePath,
     fluentSource,
     serverSource,
+    // Raw, unescaped script body (pre-embedding) — NOW-12's approval
+    // statement generator inspects the actual code to describe data
+    // touched / privilege concerns, rather than re-deriving it from
+    // fluentSource/serverSource text.
+    scriptBody,
     validation,
     // Structured summary for NOW-12 (approval statement) — plain-English
     // trigger + condition + what it does, not raw code. Keep this shape
@@ -137,6 +142,11 @@ async function generateBusinessRule(context, opts = {}) {
       trigger: `${when} ${action.join(', ')}`,
       filterCondition: filterCondition || null,
       whatItDoes: scriptSummary,
+      // Fluent's `order` field isn't context-driven (see buildFluentSource
+      // above — always 100 for MVP), but the approval statement template
+      // needs to state it explicitly, so it's surfaced here rather than
+      // duplicated as a second hardcoded literal in the approval module.
+      order: 100,
     },
   };
 }
