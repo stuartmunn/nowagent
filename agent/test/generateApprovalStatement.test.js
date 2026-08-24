@@ -260,3 +260,30 @@ test('generateClientScriptApprovalNarrative rejects a malformed tool response (e
     /malformed emit_client_script_approval_narrative tool call: securityFlag must be a non-empty string/,
   );
 });
+
+// PR Agent flagged (NOW-12 review): a uiType other than 'all' rendered as
+// a raw internal code rather than plain English. Currently unreachable in
+// practice (generateClientScript.js hardcodes uiType to 'all'), but this
+// exercises the fallback directly against a synthetic artifact so it isn't
+// silently untested dead code.
+test('generateApprovalStatement humanizes a uiType other than "all" instead of showing a raw code', async () => {
+  const context = { table: 'incident', type: 'onLoad', description: 'x' };
+  const syntheticArtifact = {
+    scriptBody: "  g_form.addInfoMessage('x');",
+    summary: {
+      artifactType: 'Client Script',
+      name: 'x',
+      table: 'incident',
+      trigger: 'onLoad',
+      filterCondition: null,
+      whatItDoes: 'x',
+      uiType: 'desktop_only',
+      isolateScript: true,
+      global: true,
+    },
+  };
+
+  const { text } = await generateApprovalStatement(context, syntheticArtifact, { claudeClient: narrativeCsClient });
+
+  assert.match(text, /^Condition: Desktop Only, isolate scope: isolated\.$/m);
+});

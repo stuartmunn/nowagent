@@ -115,8 +115,14 @@ test('reject discards the artifact and statement, leaving nothing to apply', asy
 
   assert.equal(rejected.state, 'rejected');
   assert.equal(rejected.readyToApply, false);
-  assert.equal(rejected.artifact, undefined, 'a rejected session must not carry the artifact forward');
-  assert.equal(rejected.statement, undefined, 'a rejected session must not carry the statement forward');
+  // Content is discarded (null), but PR Agent flagged (NOW-12 review) that
+  // the keys themselves should still be present with a consistent shape
+  // across every state, not omitted — so generic session-inspecting code
+  // doesn't have to special-case which fields exist per state.
+  assert.equal(rejected.artifact, null, 'a rejected session must not carry the artifact forward');
+  assert.equal(rejected.statement, null, 'a rejected session must not carry the statement forward');
+  assert.equal(rejected.narrative, null);
+  assert.deepEqual(Object.keys(rejected).sort(), Object.keys(session).sort(), 'a rejected session must have the same shape as any other session state');
 });
 
 test('revise regenerates from the consultant feedback and stays pending', async () => {

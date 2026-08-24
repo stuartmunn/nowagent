@@ -134,13 +134,26 @@ async function decide(session, action, { feedback } = {}) {
   }
 
   if (action === 'reject') {
-    // Discard the artifact and statement outright — a rejected session
-    // carries nothing forward that a caller could accidentally apply.
+    // Discard the artifact/statement/narrative *content* outright (per
+    // NOW-12's acceptance criteria: "artifact and statement are discarded,
+    // nothing queued for deploy") — but keep every field present, set to
+    // null, rather than omitting the keys entirely. A rejected session
+    // previously had a different shape from a pending/approved one (PR
+    // Agent caught this) — code that inspects a session generically
+    // without checking state first (future logging/debugging tooling, or
+    // NOW-13) shouldn't have to special-case which keys exist per state.
+    // generate/opts aren't "content" that was approved/rejected — they're
+    // the plumbing that produced it — so they're kept as-is, not nulled.
     return freezeSession({
       id: session.id,
       state: 'rejected',
       readyToApply: false,
+      generate: session.generate,
       context: session.context,
+      opts: session.opts,
+      artifact: null,
+      statement: null,
+      narrative: null,
       history: session.history,
     });
   }

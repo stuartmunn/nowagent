@@ -47,8 +47,22 @@ function describeBrTrigger({ when, action, table }) {
   return `Runs ${adverb} ${actionPhrase} on ${table}.`;
 }
 
+// Only 'all' is ever produced today — generateClientScript.js hardcodes
+// uiType (see that file's comment). This mapping is defensive for if that's
+// ever relaxed (PR Agent caught it was missing): not a verified mapping of
+// ServiceNow's full ui_type enum (this codebase's own standing rule is
+// verify now-sdk/platform facts hands-on, don't assume — see
+// generateClientScript.js's docblock), just a readable fallback so an
+// unmapped value renders as prose instead of a raw internal code leaking
+// into a governance document meant for a non-technical approver.
+function humanizeUiType(uiType) {
+  return String(uiType)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function describeCsCondition({ uiType, isolateScript }) {
-  const uiText = uiType === 'all' ? 'Desktop and Mobile UI' : uiType;
+  const uiText = uiType === 'all' ? 'Desktop and Mobile UI' : humanizeUiType(uiType);
   const scopeText = isolateScript ? 'isolated' : 'global';
   return `Condition: ${uiText}, isolate scope: ${scopeText}.`;
 }
